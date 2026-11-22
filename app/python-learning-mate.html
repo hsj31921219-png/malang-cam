@@ -1628,7 +1628,8 @@ let myStudy = { state:'focus', note:'', since:0, face:'smile', hand:false };
 let chatCool = 0, timerBusy = false, linkBusy = false;
 let meetUI = { layout:'gallery', pin:null, pick:null, camInfo:false };
 const AVATAR_RE = /^https:\/\/[^\s"'<>]{4,300}$/;
-const avatarUrl = () => (typeof db.avatarUrl === 'string' && AVATAR_RE.test(db.avatarUrl)) ? db.avatarUrl : '';
+const DEFAULT_AVATAR = 'https://hsj31921219-png.github.io/malang-cam/';   // GitHub Pages에 올린 말랑이 아바타 카메라
+const avatarUrl = () => (typeof db.avatarUrl === 'string' && AVATAR_RE.test(db.avatarUrl)) ? db.avatarUrl : DEFAULT_AVATAR;
 function avatarCard(){
   const u = avatarUrl();
   return `<div class="card cam-card">
