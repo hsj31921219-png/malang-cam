@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>말랑이 아바타 카메라</title>
+<!--
+  말랑이 아바타 카메라
+  - 카메라로 내 얼굴 움직임(눈 깜빡임, 입, 눈썹, 고개)을 읽어서 3D 말랑이가 따라 하게 해요.
+  - 얼굴 인식: Google MediaPipe Face Landmarker (얼굴 위 점 478개 + 표정 값 52개를 계산)
+  - 3D: three.js
+  - 얼굴 영상은 내 컴퓨터 안에서만 분석하고, 어디에도 보내거나 저장하지 않아요.
+  - 사용법: 이 파일을 크롬으로 열기 → [카메라 켜기] → Zoom/Meet에서 이 창을 화면 공유
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{ --pink:#ff7fb0; --ink:#4a4060; --sub:#8a7fa3; color-scheme:light; }
+  *{ box-sizing:border-box }
+  html,body{ margin:0; height:100%; font-family:'Noto Sans KR',sans-serif; color:var(--ink) }
+  body{ display:flex; background:#f6f0fb }
+  button,input,select{ font:inherit; color:var(--ink) }
+
+  /* ---------- 무대 (화면 공유할 부분) ---------- */
+  #stage{ position:relative; flex:1; min-width:0; overflow:hidden;
+          background:linear-gradient(180deg,#a9dcff 0%,#cdeaff 45%,#fde6f1 100%) }
+  #stage.green{ background:#00b140 }           /* 크로마키(초록 배경): OBS 등에서 배경을 지울 때 */
+  #stage.night{ background:radial-gradient(circle at 50% 30%,#5b4b8a,#2b2540) }
+  #stage canvas{ position:absolute; inset:0; width:100%!important; height:100%!important }
+  .hill{ position:absolute; border-radius:50%; }
+  .h1{ width:80%; height:38%; left:-15%; bottom:-26%; background:#c9f0d4 }
+  .h2{ width:90%; height:44%; right:-25%; bottom:-32%; background:#b5e8c6 }
+  #stage.green .hill, #stage.night .hill{ display:none }
+  #nameTag{ position:absolute; left:16px; bottom:16px; background:rgba(0,0,0,.55); color:#fff; padding:5px 14px;
+            border-radius:10px; font-family:'Jua',sans-serif; font-size:20px; z-index:3 }
+  #nameTag:empty{ display:none }
+  #status{ position:absolute; top:14px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,.9);
+           border:3px solid #ffd3e6; border-radius:999px; padding:6px 16px; font-family:'Jua',sans-serif; font-size:16px;
+           color:#6b5a8a; z-index:3; white-space:nowrap }
+  #status.hide{ display:none }
+  #preview{ position:absolute; right:14px; bottom:14px; width:170px; border-radius:14px; border:3px solid #fff;
+            transform:scaleX(-1); z-index:3; box-shadow:0 4px 14px rgba(0,0,0,.2); background:#222 }
+  #preview.hide{ display:none }
+  #preview.nomirror{ transform:none }
+
+  /* ---------- 설정 패널 ---------- */
+  #panel{ width:300px; flex:none; overflow-y:auto; padding:18px; background:#fff; border-left:3px solid #ffe0ee }
+  body.present #panel{ display:none }
+  h1{ font-family:'Jua',sans-serif; font-weight:400; color:var(--pink); font-size:26px; margin:0 0 4px }
+  h2{ font-family:'Jua',sans-serif; font-weight:400; color:#6b5a8a; font-size:18px; margin:18px 0 8px }
+  .muted{ color:var(--sub); font-size:13px }
+  .btn{ width:100%; border:2px solid #ffd3e6; background:#fff; padding:10px; border-radius:16px; font-weight:700;
+        box-shadow:0 4px 0 #ffd3e6; cursor:pointer; margin-top:8px }
+  .btn:active{ transform:translateY(3px); box-shadow:0 1px 0 #ffd3e6 }
+  .btn.primary{ background:linear-gradient(180deg,#ff9cc7,#ff7fb0); border-color:#e2609a; color:#fff; box-shadow:0 4px 0 #e2609a }
+  .row{ display:flex; justify-content:space-between; align-items:center; margin:8px 0; font-size:14px }
+  select,input[type=text]{ border:2px solid #ffe0ee; border-radius:12px; padding:7px 10px; width:100% }
+  input[type=checkbox]{ width:18px; height:18px; accent-color:#ff8fbf }
+  .meter{ display:grid; grid-template-columns:70px 1fr; gap:6px; align-items:center; font-size:12px; margin:5px 0 }
+  .meter div{ height:10px; background:#f3eefa; border-radius:999px; overflow:hidden }
+  .meter i{ display:block; height:100%; width:0; background:linear-gradient(90deg,#9fe3b8,#ff9cc7); border-radius:999px }
+  ol{ padding-left:18px; margin:6px 0; font-size:13px; color:#6b5a8a }
+  ol li{ margin:4px 0 }
+  .note{ background:#f6f1ff; border:2px solid #e3d5ff; border-radius:14px; padding:9px 11px; font-size:12px; color:#6a4fc4; margin-top:12px }
+  #exitPresent{ position:absolute; top:12px; right:12px; z-index:4; display:none; border:0; background:rgba(255,255,255,.85);
+                border-radius:999px; padding:6px 12px; cursor:pointer; font-size:13px }
+  body.present #exitPresent{ display:block }
+  @media (max-width:760px){ body{ flex-direction:column } #panel{ width:auto; border-left:0; border-top:3px solid #ffe0ee; max-height:45vh } #stage{ min-height:55vh } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.169.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="stage">
+  <div class="hill h2"></div><div class="hill h1"></div>
+  <div id="status">🍡 [카메라 켜기]를 누르면 말랑이가 내 표정을 따라 해요</div>
+  <div id="nameTag"></div>
+  <video id="preview" class="hide" playsinline muted></video>
+  <button id="exitPresent">⤺ 설정 보기</button>
+</div>
+
+<aside id="panel">
+  <h1>🍡 말랑이 아바타 카메라</h1>
+  <p class="muted" style="margin:0">내가 눈을 깜빡이면 말랑이도 깜빡여요. 입을 벌리면 말랑이도 말하고, 고개를 돌리면 같이 돌아가요.</p>
+
+  <button class="btn primary" id="camBtn">📷 카메라 켜기</button>
+
+  <h2>📊 지금 읽은 내 표정</h2>
+  <div class="meter"><span>왼눈 감음</span><div><i id="mBlinkL"></i></div></div>
+  <div class="meter"><span>오른눈 감음</span><div><i id="mBlinkR"></i></div></div>
+  <div class="meter"><span>입 벌림</span><div><i id="mJaw"></i></div></div>
+  <div class="meter"><span>웃음</span><div><i id="mSmile"></i></div></div>
+  <div class="meter"><span>눈썹 올림</span><div><i id="mBrow"></i></div></div>
+
+  <h2>🎨 꾸미기</h2>
+  <div class="row"><span>이름표</span></div>
+  <input type="text" id="nameIn" maxlength="20" placeholder="예: 파이썬 새싹">
+  <div class="row" style="margin-top:10px"><span>배경</span>
+    <select id="bgSel" style="width:150px">
+      <option value="pastel">하늘 파스텔</option>
+      <option value="night">밤하늘</option>
+      <option value="green">초록 (크로마키)</option>
+    </select></div>
+  <div class="row"><span>몸 색깔</span>
+    <select id="colorSel" style="width:150px">
+      <option value="0xbff2dc">민트</option>
+      <option value="0xffd1e3">딸기</option>
+      <option value="0xd9ccff">라벤더</option>
+      <option value="0xfff0b3">바나나</option>
+      <option value="0xc4e6ff">소다</option>
+    </select></div>
+  <div class="row"><label for="mirror">좌우 반전 (거울처럼)</label><input type="checkbox" id="mirror" checked></div>
+  <div class="row"><label for="showCam">내 카메라 작게 보기</label><input type="checkbox" id="showCam"></div>
+
+  <button class="btn" id="presentBtn">🖥️ 발표 모드 (설정 숨기기)</button>
+  <button class="btn" id="fullBtn">⛶ 전체 화면</button>
+
+  <h2>📡 친구에게 보여 주기</h2>
+  <ol>
+    <li>Zoom이나 Google Meet 회의에 들어가요.</li>
+    <li><b>[화면 공유]</b> → 이 크롬 창(또는 탭)을 골라요.</li>
+    <li>[발표 모드]를 누르면 말랑이만 깔끔하게 보여요.</li>
+  </ol>
+  <p class="muted">💡 OBS 같은 방송 프로그램의 "가상 카메라"를 쓰면 카메라 자리에 말랑이를 넣을 수도 있어요. 이때 초록 배경을 쓰면 배경을 지울 수 있어요.</p>
+
+  <div class="note">🔒 얼굴 영상은 이 컴퓨터 안에서만 분석해요. 영상을 저장하거나 인터넷으로 보내지 않아요. (처음 한 번 얼굴 인식 도구를 인터넷에서 내려받아요)</div>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+
+const $ = id => document.getElementById(id);
+const stage = $('stage'), statusEl = $('status');
+const say = (t, keep) => { statusEl.textContent = t; statusEl.classList.remove('hide'); clearTimeout(say.t); if(!keep) say.t = setTimeout(() => statusEl.classList.add('hide'), 2600); };
+
+/* ========== 1. 3D 말랑이 만들기 (도형을 조합한 오리지널 캐릭터) ========== */
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
+renderer.setClearColor(0x000000, 0);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 50);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8b8c8, 2.3));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(2, 4, 3); scene.add(sun);
+
+// 말랑 셰이더: 숨 쉬듯 / 말할 때 몸이 찌그러졌다 펴져요
+const U = { uSquash:{ value:0 }, uHeight:{ value:0.9 } };
+function squishy(mat){
+  mat.onBeforeCompile = s => {
+    Object.assign(s.uniforms, U);
+    s.vertexShader = 'uniform float uSquash; uniform float uHeight;\n' + s.vertexShader.replace('#include <project_vertex>', `
+      vec4 sqW = modelMatrix * vec4(transformed, 1.0);
+      float sqH = clamp(sqW.y / uHeight, 0.0, 1.0);
+      float sqS = clamp(uSquash, -0.4, 0.6);
+      sqW.y *= (1.0 - sqS);
+      sqW.xz *= 1.0 + (inversesqrt(1.0 - sqS) - 1.0) * (0.5 + 0.9 * sin(3.14159 * sqH));
+      transformed = (inverse(modelMatrix) * sqW).xyz;
+      #include <project_vertex>`);
+    if (s.fragmentShader.includes('vViewPosition')) s.fragmentShader = s.fragmentShader.replace('#include <dithering_fragment>', `
+      float sqRim = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+      gl_FragColor.rgb += vec3(1.0,0.94,0.98) * pow(sqRim, 2.0) * 0.45;
+      #include <dithering_fragment>`);
+  };
+  return mat;
+}
+const mat = (c, r = 0.9) => squishy(new THREE.MeshStandardMaterial({ color:c, roughness:r, metalness:0 }));
+
+const root = new THREE.Group(); scene.add(root);           // 고개 돌리기용
+const head = new THREE.Group(); root.add(head);
+const add = (geo, m, x, y, z, sx = 1, sy = 1, sz = 1, parent = head) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.scale.set(sx, sy, sz); parent.add(o); return o; };
+
+const bodyMat = mat(0xbff2dc);
+add(new THREE.SphereGeometry(0.5, 64, 48), bodyMat, 0, 0.425, 0, 1.12, 0.85, 1);
+const cheekM = mat(0xffb3cf);
+const cheeks = [ add(new THREE.SphereGeometry(0.07, 24, 16), cheekM, -0.3, 0.4, 0.405, 1, 0.6, 0.35),
+                 add(new THREE.SphereGeometry(0.07, 24, 16), cheekM,  0.3, 0.4, 0.405, 1, 0.6, 0.35) ];
+const ink = mat(0x3b2f4a, 0.3), white = mat(0xffffff, 0.4);
+// 눈: 눈알 + 반짝이를 한 그룹으로 (그룹의 세로 크기를 줄이면 눈 감기)
+function makeEye(x){
+  const g = new THREE.Group(); g.position.set(x, 0.5, 0.455); head.add(g);
+  add(new THREE.SphereGeometry(0.055, 24, 16), ink, 0, 0, 0, 1, 1.15, 0.6, g);
+  add(new THREE.SphereGeometry(0.018, 12, 8), white, 0.02, 0.025, 0.035, 1, 1, 1, g);
+  return g;
+}
+const eyes = [ makeEye(-0.17), makeEye(0.17) ];   // [화면 왼쪽 눈, 화면 오른쪽 눈]
+// 눈썹
+const browM = mat(0x8a6f8f, 0.6);
+const brows = [ add(new THREE.CapsuleGeometry(0.012, 0.06, 4, 8), browM, -0.17, 0.6, 0.44), add(new THREE.CapsuleGeometry(0.012, 0.06, 4, 8), browM, 0.17, 0.6, 0.44) ];
+brows.forEach(b => b.rotation.z = Math.PI / 2);
+// 입: 웃는 반달 + 벌린 입(타원)
+const smile = add(new THREE.TorusGeometry(0.045, 0.013, 10, 24, Math.PI), ink, 0, 0.445, 0.488); smile.rotation.z = Math.PI;
+const mouthOpen = add(new THREE.SphereGeometry(0.05, 24, 16), ink, 0, 0.43, 0.488, 1, 0.1, 0.45);
+const tongue = add(new THREE.SphereGeometry(0.03, 16, 12), mat(0xff8fab), 0, 0.405, 0.5, 1, 0.5, 0.3);
+// 머리 위 새싹
+const leafM = mat(0x7fd49b);
+add(new THREE.CylinderGeometry(0.014, 0.018, 0.12, 10), leafM, 0, 0.83, 0);
+const leafL = add(new THREE.SphereGeometry(0.08, 20, 12), leafM, -0.075, 0.9, 0, 1, 0.42, 0.62); leafL.rotation.z =  0.5;
+const leafR = add(new THREE.SphereGeometry(0.08, 20, 12), leafM,  0.075, 0.9, 0, 1, 0.42, 0.62); leafR.rotation.z = -0.5;
+head.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
+head.position.y = -0.42; root.position.y = 0.42;    // 몸 가운데를 기준으로 고개가 돌아가게
+
+// 발밑 그림자
+const sc = document.createElement('canvas'); sc.width = sc.height = 128;
+const g2 = sc.getContext('2d'), gr = g2.createRadialGradient(64,64,0,64,64,64);
+gr.addColorStop(0, 'rgba(120,90,160,0.35)'); gr.addColorStop(1, 'rgba(120,90,160,0)'); g2.fillStyle = gr; g2.fillRect(0,0,128,128);
+const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(sc), transparent:true, depthWrite:false }));
+shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.002; scene.add(shadow);
+
+function fit(){
+  const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  const dist = 3.7 * Math.max(1, 1.1 / camera.aspect);
+  camera.position.set(0, 0.55, dist); camera.lookAt(0, 0.45, 0); camera.updateProjectionMatrix();
+}
+new ResizeObserver(fit).observe(stage); fit();
+
+/* ========== 2. 얼굴 인식 (MediaPipe) ========== */
+const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+const MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const video = $('preview');
+let landmarker = null, tracking = false, lastVideoTime = -1, lastSeen = 0;
+// 목표 값(얼굴에서 읽은 값)과 현재 값(부드럽게 따라가는 값)
+const target = { blinkL:0, blinkR:0, jaw:0, smile:0, brow:0, yaw:0, pitch:0, roll:0 };
+const cur = { ...target };
+
+async function startCamera(){
+  const btn = $('camBtn'); btn.disabled = true;
+  try{
+    say('📷 카메라를 켜는 중... (허용을 눌러 주세요)', true);
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ width:640, height:480, facingMode:'user' }, audio:false });
+    video.srcObject = stream; await video.play();
+    say('🧠 얼굴 인식 도구를 불러오는 중... (처음엔 몇 초 걸려요)', true);
+    const { FaceLandmarker, FilesetResolver } = await import(`${MP}/vision_bundle.mjs`);
+    const fileset = await FilesetResolver.forVisionTasks(`${MP}/wasm`);
+    const opts = { outputFaceBlendshapes:true, outputFacialTransformationMatrixes:true, runningMode:'VIDEO', numFaces:1 };
+    try{ landmarker = await FaceLandmarker.createFromOptions(fileset, { baseOptions:{ modelAssetPath:MODEL, delegate:'GPU' }, ...opts }); }
+    catch(e){ landmarker = await FaceLandmarker.createFromOptions(fileset, { baseOptions:{ modelAssetPath:MODEL, delegate:'CPU' }, ...opts }); }
+    tracking = true;
+    btn.textContent = '⏹ 카메라 끄기'; btn.disabled = false; btn.onclick = stopCamera;
+    say('✅ 준비 완료! 눈을 깜빡여 보세요 👀');
+  }catch(e){
+    console.error(e);
+    btn.disabled = false;
+    if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) say('😢 카메라 사용이 허용되지 않았어요. 주소창 왼쪽 자물쇠에서 카메라를 허용해 주세요', true);
+    else if (e && e.name === 'NotFoundError') say('😢 카메라를 찾지 못했어요. 카메라가 연결되어 있는지 확인해 주세요', true);
+    else say('😢 얼굴 인식 도구를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요', true);
+    stopCamera(true);
+  }
+}
+function stopCamera(silent){
+  tracking = false;
+  (video.srcObject?.getTracks() || []).forEach(t => t.stop()); video.srcObject = null;
+  const btn = $('camBtn'); btn.textContent = '📷 카메라 켜기'; btn.disabled = false; btn.onclick = startCamera;
+  Object.assign(target, { blinkL:0, blinkR:0, jaw:0, smile:0, brow:0, yaw:0, pitch:0, roll:0 });
+  if (silent !== true) say('카메라를 껐어요. 말랑이는 혼자 깜빡이며 기다릴게요 🍡');
+}
+$('camBtn').onclick = startCamera;
+
+const tmpM = new THREE.Matrix4(), tmpE = new THREE.Euler();
+function readFace(){
+  if (!tracking || !landmarker || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+  const res = landmarker.detectForVideo(video, performance.now());
+  if (!res.faceBlendshapes?.length){ if (performance.now() - lastSeen > 1500) say('🙈 얼굴이 안 보여요. 카메라 앞으로 와 주세요', true); return; }
+  if (performance.now() - lastSeen > 1500) say('✅ 얼굴을 찾았어요!');
+  lastSeen = performance.now();
+  const b = {}; res.faceBlendshapes[0].categories.forEach(c => { b[c.categoryName] = c.score; });
+  const mirror = $('mirror').checked;
+  // 거울 모드에서는 내 왼쪽 눈이 화면 왼쪽에 보여요
+  target.blinkL = mirror ? b.eyeBlinkLeft : b.eyeBlinkRight;    // 화면 왼쪽 눈
+  target.blinkR = mirror ? b.eyeBlinkRight : b.eyeBlinkLeft;    // 화면 오른쪽 눈
+  target.jaw = b.jawOpen || 0;
+  target.smile = ((b.mouthSmileLeft || 0) + (b.mouthSmileRight || 0)) / 2;
+  target.brow = b.browInnerUp || 0;
+  const mtx = res.facialTransformationMatrixes?.[0];
+  if (mtx){
+    tmpM.fromArray(mtx.data); tmpE.setFromRotationMatrix(tmpM, 'YXZ');
+    const s = mirror ? 1 : -1;
+    target.pitch = tmpE.x; target.yaw = tmpE.y * s; target.roll = tmpE.z * s;
+  }
+}
+
+/* ========== 3. 매 프레임: 얼굴 값 → 말랑이 ========== */
+const clock = new THREE.Clock();
+let autoBlink = 0, nextBlink = 2;
+const lerp = (a, b, k) => a + (b - a) * k;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const bar = (id, v) => { $(id).style.width = Math.round(clamp(v, 0, 1) * 100) + '%'; };
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  readFace();
+  // 카메라가 꺼져 있으면 혼자 깜빡이기
+  if (!tracking){
+    nextBlink -= dt; if (nextBlink < 0){ autoBlink = 0.14; nextBlink = 2 + Math.random() * 3; }
+    autoBlink = Math.max(0, autoBlink - dt);
+    target.blinkL = target.blinkR = autoBlink > 0 ? 1 : 0;
+  }
+  const k = 1 - Math.pow(0.0005, dt);          // 부드럽게 따라가기 (프레임 속도와 상관없이)
+  for (const key in cur) cur[key] = lerp(cur[key], target[key], key.startsWith('blink') ? Math.min(1, k * 2.2) : k);
+
+  // 눈: 감은 정도(0~1)에 따라 세로 크기 줄이기
+  eyes[0].scale.y = clamp(1 - cur.blinkL * 1.15, 0.08, 1);
+  eyes[1].scale.y = clamp(1 - cur.blinkR * 1.15, 0.08, 1);
+  // 눈썹
+  brows.forEach(b => { b.position.y = 0.6 + cur.brow * 0.05; });
+  // 입: 많이 벌리면 둥근 입, 웃으면 반달이 넓어져요
+  const open = clamp(cur.jaw * 1.6, 0, 1);
+  mouthOpen.scale.set(1 + cur.smile * 0.3, 0.1 + open * 0.95, 0.45);
+  mouthOpen.visible = open > 0.08; tongue.visible = open > 0.35;
+  tongue.scale.set(1, 0.5 * open, 0.3);
+  smile.visible = open <= 0.08;
+  smile.scale.set(1 + cur.smile * 0.8, 1 + cur.smile * 0.5, 1);
+  cheeks.forEach(c => c.scale.set(1 + cur.smile * 0.35, 0.6 + cur.smile * 0.2, 0.35));
+  // 고개
+  root.rotation.set(clamp(cur.pitch, -0.6, 0.6) * 0.9, clamp(cur.yaw, -0.8, 0.8) * 0.9, clamp(cur.roll, -0.6, 0.6) * 0.9);
+  // 몸: 숨쉬기 + 말할 때 통통
+  U.uSquash.value = Math.sin(t * 2.2) * 0.02 + open * 0.08 * Math.abs(Math.sin(t * 14));
+  shadow.scale.setScalar(1 + Math.max(U.uSquash.value, 0) * 2);
+
+  bar('mBlinkL', cur.blinkL); bar('mBlinkR', cur.blinkR); bar('mJaw', open); bar('mSmile', cur.smile); bar('mBrow', cur.brow);
+  renderer.render(scene, camera);
+});
+
+/* ========== 4. 설정 ========== */
+$('nameIn').addEventListener('input', e => { $('nameTag').textContent = e.target.value.trim(); });
+$('bgSel').addEventListener('change', e => { stage.classList.remove('green', 'night'); if (e.target.value !== 'pastel') stage.classList.add(e.target.value); });
+$('colorSel').addEventListener('change', e => { bodyMat.color.setHex(Number(e.target.value)); });
+$('showCam').addEventListener('change', e => { video.classList.toggle('hide', !e.target.checked); });
+$('mirror').addEventListener('change', e => { video.classList.toggle('nomirror', !e.target.checked); });
+$('presentBtn').onclick = () => { document.body.classList.add('present'); fit(); };
+$('exitPresent').onclick = () => { document.body.classList.remove('present'); fit(); };
+$('fullBtn').onclick = () => { (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); };
+addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('present')){ document.body.classList.remove('present'); fit(); } });
+setTimeout(() => statusEl.classList.contains('hide') || say(statusEl.textContent), 100);
+</script>
+</body>
+</html>
