@@ -46,6 +46,14 @@
 
 `app/python-learning-mate.html` 은 공부앱 코드예요 (참고·포트폴리오용).
 
+| 홈 | 문제 풀이 (실행·채점·힌트) |
+|---|---|
+| ![홈 화면](docs/screens/home.jpg) | ![문제 화면](docs/screens/detail.jpg) |
+| **공부 대시보드** | **말랑이 회의실** |
+| ![대시보드](docs/screens/dash.jpg) | ![회의실](docs/screens/meet.jpg) |
+
+<sub>※ 화면 캡처는 예시 데이터로 찍었어요. 회의실의 참여자 이름도 테스트용이에요.</sub>
+
 | 기능 | 내용 |
 |---|---|
 | 3단계 힌트 | 풀이 순서 → 쓸 문법 → 코드 뼈대. 모범 풀이는 맨 마지막에 |
@@ -78,3 +86,16 @@
 | 아바타 카메라를 매번 파일로 열기 귀찮음 | GitHub Pages로 배포 → 앱에서 버튼 한 번 |
 
 말랑이는 이 프로젝트를 위해 만든 **오리지널 캐릭터**예요.
+
+---
+
+## 📁 폴더 구조
+
+```
+malang-cam/
+├── index.html                      말랑이 아바타 카메라 (GitHub Pages 첫 화면)
+├── app/python-learning-mate.html   파이썬 러닝메이트 공부앱
+├── docs/screens/                   README용 앱 화면 캡처
+├── logo.png                        말랑이 로고
+└── README.md
+```
