@@ -72,6 +72,8 @@
 
 ## 🛠️ 만든 과정과 AI 활용
 
+> 📒 단계별 진행, 기획서(PRD), 버전 기록, AI 활용 기록 전체는 **[docs/PROJECT_LOG.md](docs/PROJECT_LOG.md)** 에 정리했어요.
+
 이 프로젝트는 AI(Claude)와 함께 만들었어요.
 **문제 정의, 기능 선택, 직접 써 보며 버그 찾기, 방향 결정**은 제가 했고,
 **코드 작성과 선택지 제안**은 AI가 했어요.
@@ -95,6 +97,7 @@
 malang-cam/
 ├── index.html                      말랑이 아바타 카메라 (GitHub Pages 첫 화면)
 ├── app/python-learning-mate.html   파이썬 러닝메이트 공부앱
+├── docs/PROJECT_LOG.md             프로젝트 기록 (단계, 기획서, 버전, AI 활용)
 ├── docs/screens/                   README용 앱 화면 캡처
 ├── logo.png                        말랑이 로고
 └── README.md
